@@ -20,12 +20,11 @@ import (
 
 // Estrutura para representar uma notificação
 type Notification struct {
-	ID             int       `json:"id"`
-	UserIDSend     int       `json:"id_user_send"`
-	UserIDReceived int       `json:"id_user_received"`
-	TypeMessage    int       `json:"type_message"`
-	Message        string    `json:"message"`
-	Date           time.Time `json:"date"`
+	ID          int       `json:"id"`
+	TypeMessage int       `json:"type_message"`
+	Message     string    `json:"message"`
+	TaskTitle   string    `json:"task_title"` // Adicionando o campo TaskTitle
+	Date        time.Time `json:"date"`
 }
 
 type myNotificationServer struct {
@@ -47,7 +46,7 @@ func closeDB(db *sql.DB) {
 	db.Close()
 }
 
-// Método para obter todas as notificações
+// GET - Todas as notificações
 func (s *myNotificationServer) GetNotifications(ctx context.Context, req *pb.GetNotificationsRequest) (*pb.NotificationList, error) {
 	// Configurar a conexão com o banco de dados PostgreSQL
 	db, err := connectDB()
@@ -57,7 +56,7 @@ func (s *myNotificationServer) GetNotifications(ctx context.Context, req *pb.Get
 	defer closeDB(db)
 
 	// Consulta ao banco de dados para obter todas as notificações
-	rows, err := db.Query("SELECT id, id_user_send, id_user_received, type_message, message, date FROM notifications")
+	rows, err := db.Query("SELECT id, type_message, message, task_title, date FROM notifications")
 	if err != nil {
 		return nil, err
 	}
@@ -67,19 +66,18 @@ func (s *myNotificationServer) GetNotifications(ctx context.Context, req *pb.Get
 	notifications := []*pb.Notification{}
 	for rows.Next() {
 		var notification Notification
-		err := rows.Scan(&notification.ID, &notification.UserIDSend, &notification.UserIDReceived, &notification.TypeMessage, &notification.Message, &notification.Date)
+		err := rows.Scan(&notification.ID, &notification.TypeMessage, &notification.Message, &notification.TaskTitle, &notification.Date)
 		if err != nil {
 			return nil, err
 		}
 
 		// Criar um objeto de notificação protobuf e adicionar à lista
 		pbNotification := &pb.Notification{
-			Id:             int32(notification.ID),
-			UserIdSend:     int32(notification.UserIDSend),
-			UserIdReceived: int32(notification.UserIDReceived),
-			TypeMessage:    int32(notification.TypeMessage),
-			Message:        notification.Message,
-			Date:           notification.Date.String(), // Convertendo para string para usar o formato esperado pelo protobuf
+			Id:          int32(notification.ID),
+			TypeMessage: int32(notification.TypeMessage),
+			Message:     notification.Message,
+			TaskTitle:   notification.TaskTitle,
+			Date:        notification.Date.String(),
 		}
 		notifications = append(notifications, pbNotification)
 	}
@@ -95,7 +93,7 @@ func (s *myNotificationServer) GetNotifications(ctx context.Context, req *pb.Get
 	}, nil
 }
 
-// Método para obter uma notificação específica
+// GET - Uma notificação
 func (s *myNotificationServer) GetNotification(ctx context.Context, req *pb.GetNotificationRequest) (*pb.Notification, error) {
 	// Extrair o ID da notificação do pedido
 	notificationID := req.GetId()
@@ -109,8 +107,8 @@ func (s *myNotificationServer) GetNotification(ctx context.Context, req *pb.GetN
 
 	// Consultar o banco de dados para obter a notificação com o ID fornecido
 	var notification Notification
-	err = db.QueryRow("SELECT id, id_user_send, id_user_received, type_message, message, date FROM notifications WHERE id = $1", notificationID).Scan(
-		&notification.ID, &notification.UserIDSend, &notification.UserIDReceived, &notification.TypeMessage, &notification.Message, &notification.Date)
+	err = db.QueryRow("SELECT id, type_message, message, task_title, date FROM notifications WHERE id = $1", notificationID).Scan(
+		&notification.ID, &notification.TypeMessage, &notification.Message, &notification.TaskTitle, &notification.Date)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, status.Errorf(codes.NotFound, "Notificação com ID %v não encontrada", notificationID)
@@ -120,23 +118,27 @@ func (s *myNotificationServer) GetNotification(ctx context.Context, req *pb.GetN
 
 	// Construir e retornar a notificação encontrada
 	pbNotification := &pb.Notification{
-		Id:             int32(notification.ID),
-		UserIdSend:     int32(notification.UserIDSend),
-		UserIdReceived: int32(notification.UserIDReceived),
-		TypeMessage:    int32(notification.TypeMessage),
-		Message:        notification.Message,
-		Date:           notification.Date.String(), // Convertendo para string para usar o formato esperado pelo protobuf
+		Id:          int32(notification.ID),
+		TypeMessage: int32(notification.TypeMessage),
+		Message:     notification.Message,
+		TaskTitle:   notification.TaskTitle,
+		Date:        notification.Date.String(),
 	}
 	return pbNotification, nil
 }
 
-// Método para criar uma notificação
+// POST - Criar uma notificação
 func (s *myNotificationServer) CreateNotification(ctx context.Context, req *pb.CreateNotificationRequest) (*pb.Notification, error) {
 	if req == nil || req.Notification == nil {
 		return nil, errors.New("empty request")
 	}
 
 	newNotification := req.GetNotification()
+
+	// Verificar se os campos obrigatórios estão presentes e não vazios
+	if newNotification.TypeMessage == 0 || newNotification.Message == "" {
+		return nil, errors.New("missing required fields")
+	}
 
 	db, err := connectDB()
 	if err != nil {
@@ -145,24 +147,23 @@ func (s *myNotificationServer) CreateNotification(ctx context.Context, req *pb.C
 	defer closeDB(db)
 
 	var notificationID int
-	err = db.QueryRow("INSERT INTO notifications (id_user_send, id_user_received, type_message, message, date) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP) RETURNING id",
-		newNotification.UserIdSend, newNotification.UserIdReceived, newNotification.TypeMessage, newNotification.Message).Scan(&notificationID)
+	err = db.QueryRow("INSERT INTO notifications (type_message, message, task_title, date) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) RETURNING id",
+		newNotification.TypeMessage, newNotification.Message, newNotification.TaskTitle).Scan(&notificationID)
 	if err != nil {
 		return nil, err
 	}
 
 	createdNotification := &pb.Notification{
-		Id:             int32(notificationID),
-		UserIdSend:     newNotification.UserIdSend,
-		UserIdReceived: newNotification.UserIdReceived,
-		TypeMessage:    newNotification.TypeMessage,
-		Message:        newNotification.Message,
-		Date:           time.Now().String(),
+		Id:          int32(notificationID),
+		TypeMessage: newNotification.TypeMessage,
+		Message:     newNotification.Message,
+		TaskTitle:   newNotification.TaskTitle,
+		Date:        time.Now().String(),
 	}
 	return createdNotification, nil
 }
 
-// Método para atualizar uma notificação
+// PATCH - Atualizar uma notificação
 func (s *myNotificationServer) UpdateNotification(ctx context.Context, req *pb.UpdateNotificationRequest) (*pb.Notification, error) {
 	// Extrair a notificação do pedido
 	updateNotification := req.GetNotification()
@@ -185,14 +186,6 @@ func (s *myNotificationServer) UpdateNotification(ctx context.Context, req *pb.U
 	query := "UPDATE notifications SET "
 
 	// Verificar quais campos foram fornecidos e adicionar à lista de campos e valores
-	if updateNotification.UserIdSend != 0 {
-		fieldsToUpdate = append(fieldsToUpdate, "id_user_send")
-		valuesToUpdate = append(valuesToUpdate, updateNotification.UserIdSend)
-	}
-	if updateNotification.UserIdReceived != 0 {
-		fieldsToUpdate = append(fieldsToUpdate, "id_user_received")
-		valuesToUpdate = append(valuesToUpdate, updateNotification.UserIdReceived)
-	}
 	if updateNotification.TypeMessage != 0 {
 		fieldsToUpdate = append(fieldsToUpdate, "type_message")
 		valuesToUpdate = append(valuesToUpdate, updateNotification.TypeMessage)
@@ -200,6 +193,10 @@ func (s *myNotificationServer) UpdateNotification(ctx context.Context, req *pb.U
 	if updateNotification.Message != "" {
 		fieldsToUpdate = append(fieldsToUpdate, "message")
 		valuesToUpdate = append(valuesToUpdate, updateNotification.Message)
+	}
+	if updateNotification.TaskTitle != "" { // Verificar se o título da tarefa foi fornecido
+		fieldsToUpdate = append(fieldsToUpdate, "task_title")
+		valuesToUpdate = append(valuesToUpdate, updateNotification.TaskTitle)
 	}
 
 	// Adicionar cada campo atualizável à consulta SQL
@@ -225,17 +222,16 @@ func (s *myNotificationServer) UpdateNotification(ctx context.Context, req *pb.U
 
 	// Retornar a notificação atualizada
 	updatedNotification := &pb.Notification{
-		Id:             int32(notificationID),
-		UserIdSend:     updateNotification.UserIdSend,
-		UserIdReceived: updateNotification.UserIdReceived,
-		TypeMessage:    updateNotification.TypeMessage,
-		Message:        updateNotification.Message,
-		Date:           time.Now().String(), // Definir a data atual
+		Id:          int32(notificationID),
+		TypeMessage: updateNotification.TypeMessage,
+		Message:     updateNotification.Message,
+		TaskTitle:   updateNotification.TaskTitle,
+		Date:        time.Now().String(),
 	}
 	return updatedNotification, nil
 }
 
-// Método para excluir uma notificação
+// DELETE - Deletar uma notificação
 func (s *myNotificationServer) DeleteNotification(ctx context.Context, req *pb.DeleteNotificationRequest) (*pb.DeleteNotificationResponse, error) {
 	// Obtenha o ID da notificação do pedido
 	notificationID := req.GetId()
@@ -291,10 +287,9 @@ func main() {
 	createTable := `
 	CREATE TABLE IF NOT EXISTS notifications (
 		id SERIAL PRIMARY KEY,
-		id_user_send INTEGER,
-		id_user_received INTEGER,
 		type_message INTEGER,
 		message TEXT,
+		task_title TEXT, 
 		date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 	`
