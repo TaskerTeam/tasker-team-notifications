@@ -1,7 +1,8 @@
 Pra rodar o projeto você precisa instalar o Go:
-```go
-https://go.dev/doc/install
-```
+
+[Instale o Go aqui!](https://go.dev/doc/install)
+
+
 
 Após a instalação do Go, usando o terminal na raiz do diretório:
 
