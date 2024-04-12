@@ -1,0 +1,47 @@
+# Binários
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Binários criados pelo Go
+bin/
+*.out
+
+# Cache e arquivos de compilação
+*.log
+*.test
+*.prof
+*.tar.gz
+*.tar
+*.zip
+*.rar
+vendor/
+Gopkg.lock
+.vscode/
+
+# Diretório do Go
+/.cache/
+/pkg/
+/*.test
+/vendor/
+/.idea/
+
+# Arquivos de configuração
+*.iml
+
+# Dependências do Go
+/vendor/
+/go.sum
+
+# Arquivos de IDE específicos
+.idea/
+
+# Arquivos de sistema operacional
+.DS_Store
+
+# Arquivos de backup
+*~
+# Logs
+*.log
+log.txt
